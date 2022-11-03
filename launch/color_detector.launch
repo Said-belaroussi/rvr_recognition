@@ -1,0 +1,12 @@
+<launch>
+  <arg name="camera"/>
+  <arg name="in" default="$(arg camera)/image_rect_color/compressed"/>
+  <arg name="temp" default="$(arg camera)/color_detector/relative_position"/>
+  <arg name="out" default="$(arg camera)/rvr_position"/>
+  <arg name="hue" default="70"/>
+  <arg name="tol" default="12"/>
+  <arg name="sat" default="65"/>
+  <arg name="val" default="160"/>
+  <node name="$(arg camera)_color_detector" pkg="rvr_recognition" type="color_detector" args="$(arg in) $(arg temp) $(arg hue) $(arg tol) $(arg sat) $(arg val) $(arg camera)"/>
+  <node name="$(arg camera)_color_translator" pkg="rvr_recognition" type="color_translator" args="$(arg temp) $(arg out) $(arg camera)"/>
+</launch>

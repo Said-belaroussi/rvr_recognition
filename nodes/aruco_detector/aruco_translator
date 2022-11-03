@@ -1,0 +1,115 @@
+#!/usr/bin/env python
+
+import sys
+import rospkg
+import rospy
+from std_msgs.msg import Header
+from geometry_msgs.msg import Point
+from rvr_recognition.msg import PointArray
+from fiducial_msgs.msg import FiducialTransformArray
+from tf.transformations import euler_from_quaternion
+import yaml
+import math
+
+RADIUS_ROBOT = 10 #10cm of radius (tags are placed at 10cm from the center)
+
+EXTRINSICS_FILES = {
+    "front_camera": "/camera/extrinsics/front.yaml",
+    "left_camera": "/camera/extrinsics/left.yaml",
+    "right_camera": "/camera/extrinsics/right.yaml",
+    "back_camera": "/camera/extrinsics/back.yaml"
+}
+
+def filter_identical_markers(transforms):
+    pair_identical_ids = []
+    for i in range(len(transforms) - 1):
+        for j in range(i + 1, len(transforms)):
+            transform_1 = transforms[i]
+            transform_2 = transforms[j]
+            id_1 = transform_1.fiducial_id
+            id_2 = transform_2.fiducial_id
+            if (id_1 == id_2):
+                pair_identical_ids.append((i, j))
+    removed_index = set([])
+    for pair in pair_identical_ids:
+        area_1 = transforms[pair[0]].fiducial_area
+        area_2 = transforms[pair[1]].fiducial_area
+        if area_1 > area_2:
+            removed_index.add(pair[1])
+        else:
+            removed_index.add(pair[0])
+    filtered_transforms = []
+    for i in range(len(transforms)):
+        if i not in removed_index:
+            filtered_transforms.append(transforms[i])
+    return filtered_transforms
+
+def get_robot_positions(transforms):
+    robot_positions = []
+    for transform in transforms:
+        transformation = transform.transform
+        translation = transformation.translation
+        point = Point()
+        point.x = translation.x*100
+        point.y = (translation.y**2 + translation.z**2) ** (1/2) * 100
+        point.z = 0
+        quaternion = transformation.rotation
+        quaternion_list = [quaternion.x, quaternion.y, quaternion.z, quaternion.w]
+        roll, pitch, yaw = euler_from_quaternion(quaternion_list)
+        # We use pitch, which is the rotation around axis y in image, so z in real 3D space
+        normal_vector = (
+            -math.sin(pitch),
+            -math.cos(pitch)
+        )
+        # We find the real center of the robot thanks to this normal vector
+        point.x -= normal_vector[0] * RADIUS_ROBOT
+        point.y -= normal_vector[1] * RADIUS_ROBOT
+        robot_positions.append(point)
+    return robot_positions
+
+
+def callback(data):
+    transforms = data.transforms
+    filtered_transforms = filter_identical_markers(transforms)
+    robot_positions = get_robot_positions(filtered_transforms)
+    msg = PointArray()
+    header = Header()
+    header.stamp = rospy.Time.now()
+    msg.header = header
+    msg.points = robot_positions
+    pub.publish(msg)
+    
+def listener():
+    rospy.init_node(NODE_NAME, anonymous=True)
+    rospy.Subscriber(INPUT, FiducialTransformArray, callback)
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+def get_fov(camera):
+    rospack = rospkg.RosPack()
+    package_path = rospack.get_path("rvr_recognition")
+    try:
+        with open(package_path+EXTRINSICS_FILES[camera]) as yaml_file:
+            extrinsic_parameters = yaml.safe_load(yaml_file)
+            fov = int(extrinsic_parameters["fov"])
+    except:
+        print("Camera extrinsics for " + camera + " not found")
+        return -1
+    return fov
+
+if __name__ == '__main__':
+    args = rospy.myargv(argv=sys.argv)
+    if len(args) != 4:
+        print("Error, wrong number of args")
+        sys.exit(1)
+    INPUT = args[1]
+    OUTPUT = args[2]
+    CAMERA = args[3]
+
+    pub = rospy.Publisher(OUTPUT, PointArray, queue_size=1)
+    FOV_RAD = get_fov(CAMERA) * math.pi / 180
+    NODE_NAME = "aruco_detector"
+    try:
+        listener()
+    except rospy.ROSInterruptException:
+        pass

@@ -1,0 +1,25 @@
+<launch>
+  <arg name="width" default="1280"/>
+  <arg name="height" default="720"/>
+  <arg name="framerate" default="30"/>
+  <include file="$(find rvr_recognition)/launch/front_camera.launch">
+    <arg name="width" value="$(arg width)"/>
+    <arg name="height" value="$(arg height)"/>
+    <arg name="framerate" value="$(arg framerate)"/>
+  </include>
+  <include file="$(find rvr_recognition)/launch/left_camera.launch">
+    <arg name="width" value="$(arg width)"/>
+    <arg name="height" value="$(arg height)"/>
+    <arg name="framerate" value="$(arg framerate)"/>
+  </include>
+  <include file="$(find rvr_recognition)/launch/right_camera.launch">
+    <arg name="width" value="$(arg width)"/>
+    <arg name="height" value="$(arg height)"/>
+    <arg name="framerate" value="$(arg framerate)"/>
+  </include>
+  <include file="$(find rvr_recognition)/launch/back_camera.launch">
+    <arg name="width" value="$(arg width)"/>
+    <arg name="height" value="$(arg height)"/>
+    <arg name="framerate" value="$(arg framerate)"/>
+  </include>
+</launch>

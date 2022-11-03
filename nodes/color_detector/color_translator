@@ -1,0 +1,72 @@
+#!/usr/bin/env python
+
+import sys
+import rospkg
+import rospy
+from std_msgs.msg import Header
+from geometry_msgs.msg import Point
+from rvr_recognition.msg import PointArray
+import yaml
+import math
+
+
+EXTRINSICS_FILES = {
+    "front_camera": "/camera/extrinsics/front.yaml",
+    "left_camera": "/camera/extrinsics/left.yaml",
+    "right_camera": "/camera/extrinsics/right.yaml",
+    "back_camera": "/camera/extrinsics/back.yaml"
+}
+
+def callback(data):
+    positions = data.points
+    msg = PointArray()
+    points = []
+    for position in positions:
+        x = position.x - 0.5
+        polar_position_theta = x * FOV_RAD/2 # scale theta thanks to relative x on image
+        point = Point()
+        point.x = position.z * math.tan(polar_position_theta)
+        point.y = position.z
+        point.z = 0
+        points.append(point)
+    header = Header()
+    header.stamp = rospy.Time.now()
+    msg.header = header
+    msg.points = points
+    pub.publish(msg)
+    
+def listener():
+    rospy.init_node(NODE_NAME, anonymous=True)
+    rospy.Subscriber(INPUT, PointArray, callback)
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+def get_fov(camera):
+    rospack = rospkg.RosPack()
+    package_path = rospack.get_path("rvr_recognition")
+    try:
+        with open(package_path+EXTRINSICS_FILES[camera]) as yaml_file:
+            extrinsic_parameters = yaml.safe_load(yaml_file)
+            fov = int(extrinsic_parameters["fov"])
+    except:
+        print("Camera extrinsics for " + camera + " not found")
+        return -1
+    return fov
+
+if __name__ == '__main__':
+    args = rospy.myargv(argv=sys.argv)
+    if len(args) != 4:
+        print("Error, wrong number of args")
+        sys.exit(1)
+    INPUT = args[1]
+    OUTPUT = args[2]
+    CAMERA = args[3]
+
+    pub = rospy.Publisher(OUTPUT, PointArray, queue_size=1)
+
+    NODE_NAME = "color_translator"
+    FOV_RAD = get_fov(CAMERA) * math.pi / 180
+    try:
+        listener()
+    except rospy.ROSInterruptException:
+        pass

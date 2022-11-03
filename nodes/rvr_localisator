@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+
+import rospy
+from std_msgs.msg import Header
+from geometry_msgs.msg import Point
+from rvr_recognition.msg import PointArray
+import math
+import yaml
+import rospkg
+
+EXTRINSICS_FILES = {
+    "front": "/camera/extrinsics/front.yaml",
+    "left": "/camera/extrinsics/left.yaml",
+    "right": "/camera/extrinsics/right.yaml",
+    "back": "/camera/extrinsics/back.yaml"
+}
+
+LENGTH_ROBOT = 10 #10cm
+
+front = []
+left = []
+right = []
+back = []
+all_positions = []
+
+def get_extrinsics():
+    extrinsics = {}
+    rospack = rospkg.RosPack()
+    package_path = rospack.get_path("rvr_recognition")
+    for camera in EXTRINSICS_FILES:
+        try:
+            with open(package_path+EXTRINSICS_FILES[camera]) as yaml_file:
+                extrinsics[camera] = yaml.safe_load(yaml_file)
+        except:
+            print("Could not load extrinsics for camera " + camera)
+            continue
+    return extrinsics
+
+def publish(positions):
+    msg = PointArray()
+    header = Header()
+    header.stamp = rospy.Time.now()
+    msg.header = header
+    msg.points = positions
+    pub.publish(msg)
+
+def get_theta(x, y):
+    theta = math.atan(x/y)
+    if (y < 0):
+        # We need to add PI to theta, since atan covers only [-PI/2; PI/2[
+        theta = (theta + math.pi)%(2*math.pi)
+    return theta
+
+def get_length(x, y):
+    return (x**2 + y**2)**(1/2)
+
+def dist(p1, p2):
+    return ((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2) ** (1/2)
+
+def transform(position, camera):
+    # We consider everything in a 2D plane
+    extrinsics = EXTRINSICS[camera]
+    translation = extrinsics["translation"]
+    rotation = extrinsics["rotation"]
+    # We get polar coordinates
+    r = get_length(position.x, position.y)
+    theta = math.atan2(position.x, position.y)
+    # We apply the rotation around the z-axis
+    theta -= (rotation["z"] * math.pi / 180)
+    transformed_position = Point()
+    transformed_position.x = r * math.sin(theta)
+    transformed_position.y = r * math.cos(theta)
+    # We apply the translation in the 2D plane
+    transformed_position.x += translation["x"]
+    transformed_position.y += translation["y"]
+    transformed_position.z = 0
+    return transformed_position
+
+def transform_positions(polar_positions, camera):
+    transformed_positions = []
+    for position in polar_positions:
+        transformed_positions.append(transform(position, camera))
+    return transformed_positions
+
+def prob_same_robot(position_1, position_2, gamma = 1):
+    d = dist(position_1, position_2)
+    try:
+        prob = 1/math.exp(gamma * d / LENGTH_ROBOT)
+    except OverflowError:
+        prob = 0
+    return prob
+
+def merge_similar_positions(positions, threshold = 0.5):
+    removed_positions = set([])
+    for i in range(len(positions) - 1):
+        for j in range(i + 1, len(positions)):
+            position_1 = positions[i]
+            position_2 = positions[j]
+            if prob_same_robot(position_1, position_2) > threshold:
+                removed_positions.add(j)
+    merged_positions = []
+    for i in range(len(positions)):
+        if i not in removed_positions:
+            merged_positions.append(positions[i])
+    return merged_positions
+
+def callback():
+    merged_positions = merge_similar_positions(all_positions)
+    publish(merged_positions)
+
+def callback_front(data):
+    global front
+    global all_positions
+    front = transform_positions(data.points, "front")
+    all_positions = front + right + back + left
+    callback()
+
+def callback_left(data):
+    global left
+    global all_positions
+    left = transform_positions(data.points, "left")
+    all_positions = front + right + back + left
+    callback()
+
+def callback_right(data):
+    global right
+    global all_positions
+    right = transform_positions(data.points, "right")
+    all_positions = front + right + back + left
+    callback()
+
+def callback_back(data):
+    global back
+    global all_positions
+    back = transform_positions(data.points, "back")
+    all_positions = front + right + back + left
+    callback()
+
+def listener():
+    rospy.init_node("rvr_localisator", anonymous=True)
+
+    rospy.Subscriber("/front_camera/rvr_position", PointArray, callback_front)
+    rospy.Subscriber("/left_camera/rvr_position", PointArray, callback_left)
+    rospy.Subscriber("/right_camera/rvr_position", PointArray, callback_right)
+    rospy.Subscriber("/back_camera/rvr_position", PointArray, callback_back)
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    EXTRINSICS = get_extrinsics()
+    pub = rospy.Publisher("rvr_localisation", PointArray, queue_size=1)
+    try:
+        listener()
+    except rospy.ROSInterruptException:
+        pass

@@ -1,0 +1,595 @@
+#!/usr/bin/env python
+
+import sys
+import cv2
+import rospy
+from std_msgs.msg import Header
+from sensor_msgs.msg import CompressedImage
+from rvr_recognition.msg import PointArray
+from geometry_msgs.msg import Point
+import numpy as np
+import math
+
+
+
+THRESHOLD_RELEVANT = 0.6
+KERNEL_SIZE_720 = 4
+MIN_AREA_720 = 10
+THRESHOLD_RATIO = 1.5
+
+DISTANCE_BETWEEN_EYES_AREA = {
+    #Estimation of the distance (relative to width) between the eyes thanks to the area (relative to the picture area) of the segmented eyes
+    0.0: 0,
+    2.9296875e-05: 0.043359375,
+    5.466037326388889e-05: 0.052343749999999994,
+    8.653428819444445e-05: 0.05859375,
+    0.00014363606770833334: 0.065625,
+    0.00017700195312500002: 0.07734375,
+    0.0003835720486111111: 0.090234375,
+    0.0006651475694444444: 0.113671875,
+    0.0012763129340277778: 0.153515625,
+    0.0016239420572916668: 0.23085937499999998,
+    1.0: 1.0    
+}
+
+DISTANCE_BETWEEN_EYES_AND_LINES_AREA = {
+    #Estimation of the distance (relative to width) between the eyes and lines thanks to the area (relative to the picture area) of the segmented eyes
+    0.0: 0,
+    2.44140625e-05: 0.175,
+    0.00018771701388888888: 0.1390625,
+    0.0009922960069444445: 0.259375,
+    1.0: 1.0    
+}
+
+DISTANCE_BETWEEN_LINES_AREA = {
+    #Estimation of the distance (relative to width) between the lines thanks to the area (relative to the picture area) of the segmented lines
+    0.0: 0,
+    0.00013780381944444444: 0.17265625,
+    0.0013731553819444444: 0.4875,
+    1.0: 1.0    
+}
+
+DEPTH_ESTIMATION_AREA_EYES = {
+    #Estimation of the depth thanks to the relative area (relative to the picture area) of the segmented eyes
+    0.0: 300,
+    2.9296875e-05: 120,
+    5.466037326388889e-05: 100,
+    8.653428819444445e-05: 90,
+    0.00014363606770833334: 80,
+    0.00017700195312500002: 70,
+    0.0003835720486111111: 60,
+    0.0006651475694444444: 50,
+    0.0012763129340277778: 40,
+    0.0016239420572916668: 30,
+    1.0: 0
+}
+
+DEPTH_ESTIMATION_AREA_LINES = {
+    #Estimation of the depth thanks to the relative area (relative to the picture area) of the segmented eyes
+    0.0: 300,
+    0.00011935763888888888: 80,
+    0.00016845703125000001: 70,
+    0.00034288194444444443: 60,
+    0.0006453450520833334: 50,
+    0.001532931857638889: 40,
+    0.0036862521701388888: 30,
+    1.0: 0
+}
+
+DISTANCE_BETWEEN_EYES_AREA_FISHEYE = {
+    #Estimation of the distance (relative to width) between the eyes thanks to the area (relative to the picture area) of the segmented eyes
+    0.0: 0,
+    2.8211805555555554e-05: 0.028125,
+    8.829752604166667e-05: 0.03125,
+    0.0001907009548611111: 0.0359375,
+    0.00030436197916666665: 0.044531249999999994,
+    0.0012943522135416665: 0.0953125,
+    1.0: 1.0    
+}
+
+DISTANCE_BETWEEN_EYES_AND_LINES_AREA_FISHEYE = {
+    #Estimation of the distance (relative to width) between the eyes and lines thanks to the area (relative to the picture area) of the segmented eyes
+    0.0: 0,
+    0.00014105902777777776: 0.0671875,
+    0.00015950520833333333: 0.08515625,
+    0.0002813042534722222: 0.1140625,
+    0.0005164930555555555: 0.16484375,
+    1.0: 1.0    
+}
+
+DISTANCE_BETWEEN_LINES_AREA_FISHEYE = {
+    #Estimation of the distance (relative to width) between the lines thanks to the area (relative to the picture area) of the segmented lines
+    0.0: 0,
+    0.0002517361111111111: 0.05078125,
+    0.0010682508680555556: 0.18359375,
+    1.0: 1.0    
+}
+
+DEPTH_ESTIMATION_AREA_EYES_FISHEYE = {
+    #Estimation of the depth thanks to the relative area (relative to the picture area) of the segmented eyes
+    0.0: 300,
+    2.8211805555555554e-05: 80,
+    8.829752604166667e-05: 70,
+    0.0001907009548611111: 60,
+    0.00030436197916666665: 50,
+    0.0012943522135416665: 30,
+    1.0: 0
+}
+
+DEPTH_ESTIMATION_AREA_LINES_FISHEYE = {
+    #Estimation of the depth thanks to the relative area (relative to the picture area) of the segmented eyes
+    0.0: 300,
+    3.526475694444444e-05: 70,
+    0.00007419162: 60,
+    0.00018690321180555555: 50,
+    0.00039835611: 40,
+    0.00130004882: 30,
+    1.0: 0
+}
+
+
+def get_min_area(height):
+    return int(height / 720 * MIN_AREA_720)
+
+def find_robots_elements(mask, height, height_division = 4):
+    """
+    Find robot elements (eyes or lines)
+    Parameters
+    ----------
+    mask: np.array (image)
+        Segmented mask.
+    height: int
+        height of image
+    Returns
+    -------
+        The elements in order, left_eyes, right_eyes and lines
+    """
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    lines = []
+    left_eyes = []
+    right_eyes = []
+    for c in contours:
+        area = cv2.contourArea(c)
+        if (area < get_min_area(height)):
+            continue
+        x, y, w, h = cv2.boundingRect(c)
+        ratio = w/h
+        if ratio > THRESHOLD_RATIO: #line
+            lines.append((x,y,w,h, area, "line"))
+        else: #eye
+            area_left = np.sum(mask[y+math.floor(h/height_division):y+math.ceil((height_division-1)*h/height_division), x:x+math.floor(w/2)])
+            area_right = np.sum(mask[y+math.floor(h/height_division):y+math.ceil((height_division-1)*h/height_division), x+math.ceil(w/2):x+w])
+            if area_right < area_left: #if we see more on the left, it is a right eye (<)
+                left_eyes.append((x,y,w,h, area, "eye"))
+            else: # else, it is a left eye (>)
+                right_eyes.append((x,y,w,h, area, "eye"))
+    return left_eyes, right_eyes, lines
+
+def estimate_threshold_between_eyes(eye, height, width):
+    if CAMERA == "back_camera":
+        dico = DISTANCE_BETWEEN_EYES_AREA_FISHEYE
+    else:
+        dico = DISTANCE_BETWEEN_EYES_AREA
+    high_bound = -1
+    low_bound = -1
+    relative_area = eye[4]/(height * width)
+    for candidate in dico:
+        if relative_area <= candidate:
+            high_bound = candidate
+            break
+        low_bound = candidate
+    if high_bound == -1: #should not happen
+        return 1 #higher than max value
+    # Linear interpolation
+    size = dico[high_bound] - dico[low_bound]
+    proportion = (relative_area - low_bound) / (high_bound - low_bound)
+    return dico[low_bound] + proportion * size
+
+def find_matching_eyes(left_eyes, right_eyes, height, width, gamma_threshold = 1):
+    """
+    Find pair of eyes
+    Parameters
+    ----------
+    left_eyes: list(tuple)
+        List of left eyes
+    right_eyes: list(tuple)
+        List of right eyes
+    height: int
+        height of the image
+    width: int
+        width of the image
+    gamma_threshold: float
+        gamma to add tolerance to the threshold
+    Returns
+    -------
+        A list of matching eyes, the remaining left eyes and remaining right eyes
+    """
+    eyes = []
+    lost_left_eyes = []
+    lost_right_eyes = []
+    left_eyes_chosen = []
+    for right_eye in right_eyes:
+        candidate_x = right_eye[0] + right_eye[2]
+        min_x = width
+        matching_left_eye = None
+        threshold = gamma_threshold * estimate_threshold_between_eyes(right_eye, height, width) * width
+        for left_eye in left_eyes:
+            if left_eye[0] > candidate_x:
+                if left_eye[0] < min_x:
+                    matching_left_eye = left_eye
+                    min_x = left_eye[0]
+        if (matching_left_eye != None and min_x - candidate_x < threshold):
+            left_eyes_chosen.append(matching_left_eye)
+            eyes.append([right_eye, matching_left_eye])
+        else:
+            lost_right_eyes.append(right_eye)
+    for left_eye in left_eyes:
+        if left_eye not in left_eyes_chosen:
+            lost_left_eyes.append(left_eye)
+    return eyes, lost_left_eyes, lost_right_eyes
+
+def area_rectangle(rectangle):
+    """
+    Give the area of a rectangle
+    Parameters
+    ----------
+    rectangle: tuple(int)
+        (x,y,w,h,area)
+    Returns
+    -------
+        Area of the rectangle
+    """
+    return rectangle[2]*rectangle[3]
+
+def estimate_threshold_between_eyes_and_lines(eyes, height, width):
+    if CAMERA == "back_camera":
+        dico = DISTANCE_BETWEEN_EYES_AND_LINES_AREA_FISHEYE
+    else:
+        dico = DISTANCE_BETWEEN_EYES_AND_LINES_AREA
+    high_bound = -1
+    low_bound = -1
+    average_area_eyes = (eyes[0][4] + eyes[1][4])/2
+    relative_area = average_area_eyes/(height * width)
+    for candidate in dico:
+        if relative_area <= candidate:
+            high_bound = candidate
+            break
+        low_bound = candidate
+    if high_bound == -1: #should not happen
+        return 1 #higher than max value
+    # Linear interpolation
+    size = dico[high_bound] - dico[low_bound]
+    proportion = (relative_area - low_bound) / (high_bound - low_bound)
+    return dico[low_bound] + proportion * size
+
+def find_eyes_with_lines(matching_eyes, lines, height, width, gamma_threshold = 1):
+    """
+    Find cluster including a pair of eyes and a line
+    Parameters
+    ----------
+    matching_eyes: list(list(tuple))
+        List of matching eyes
+    lines: list(tuple)
+        List of lines
+    height: int
+        height of the image
+    width: int
+        width of the image
+    gamma_threshold: float
+        gamma to add tolerance to the threshold
+    Returns
+    -------
+        A list of cluster (pair of eyes, lines), the remaining pair of eyes and the remaining lines
+    """
+    eyes_with_lines = []
+    lines_chosen = []
+    lost_eyes = []
+    lost_lines = []
+    for pair_eye in matching_eyes:
+        threshold = gamma_threshold * estimate_threshold_between_eyes_and_lines(pair_eye, height, width) * width
+        left_eye = pair_eye[0]
+        right_eye = pair_eye[1]
+        area_left = left_eye[4]
+        area_right = right_eye[4]
+        look_left = False
+        scale = area_left/area_right
+        if scale < 1: # If the area on the left eye is smaller than the right one, the robot looks to the left of the image
+            look_left = True
+            scale = 1/scale
+        tolerance = min(1, (scale-1))*threshold # if eyes have similar area, it is looking towards the camera, so very unlikely to see the line
+        if look_left:
+            candidate_x = left_eye[0]
+            max_x = 0
+            matching_line = None
+            for line in lines:
+                if line[0] + line[2] < candidate_x:
+                    if line[0] + line[2] > max_x:
+                        matching_line = line
+                        max_x = line[0] + line[2]
+            if (matching_line != None and candidate_x - max_x < tolerance):
+                eyes_with_lines.append([left_eye, right_eye, matching_line])
+                lines_chosen.append(matching_line)
+            else:
+                lost_eyes.append(pair_eye)
+        else:
+            candidate_x = right_eye[0]+right_eye[2]
+            min_x = width
+            matching_line = None
+            for line in lines:
+                if line[0] > candidate_x:
+                    if line[0] < min_x:
+                        matching_line = line
+                        min_x = line[0]
+            if (matching_line != None and min_x - candidate_x < tolerance):
+                eyes_with_lines.append([left_eye, right_eye, matching_line])
+                lines_chosen.append(matching_line)
+            else:
+                lost_eyes.append(pair_eye)
+    for line in lines:
+        if line not in lines_chosen:
+            lost_lines.append(line)
+    return eyes_with_lines, lost_eyes, lost_lines
+
+def sort_lines(lines):
+    """
+    Sort a list of lines
+    Parameters
+    ----------
+    lines: list(list(tuple))
+        List of lines
+    Returns
+    -------
+        The sorted list according to the x axis
+    """
+    for i in range(len(lines) - 1):
+        for j in range(i+1, len(lines)):
+            if (lines[j][0] < lines[i][0]):
+                tmp = lines[i]
+                lines[i] = lines[j]
+                lines[j] = tmp
+    return lines
+
+def estimate_threshold_between_lines(lines, height, width):
+    if CAMERA == "back_camera":
+        dico = DISTANCE_BETWEEN_LINES_AREA_FISHEYE
+    else:
+        dico = DISTANCE_BETWEEN_LINES_AREA
+    high_bound = -1
+    low_bound = -1
+    average_area_lines = (lines[0][4] + lines[1][4])/2
+    relative_area = average_area_lines/(height * width)
+    for candidate in dico:
+        if relative_area <= candidate:
+            high_bound = candidate
+            break
+        low_bound = candidate
+    if high_bound == -1: #should not happen
+        return 1 #higher than max value
+    # Linear interpolation
+    size = dico[high_bound] - dico[low_bound]
+    proportion = (relative_area - low_bound) / (high_bound - low_bound)
+    return dico[low_bound] + proportion * size
+
+def find_lines_with_lines(lost_lines, height, width, gamma_threshold = 1):
+    """
+    Find cluster of lines
+    Parameters
+    ----------
+    lost_lines: lines that are not in an 'eyes' cluster
+        List of lines
+    height: int
+        height of the image
+    width: int
+        width of the image
+    gamma_threshold: float
+        gamma to add tolerance to the threshold
+    Returns
+    -------
+        A list of cluster (matched_lines) and the remaining lines
+    """
+    if (len(lost_lines) == 0):
+        return [], []
+    elif (len(lost_lines) == 1):
+        return [], lost_lines
+    matched_lines = []
+    very_lost_lines = []
+    sorted_lines = sort_lines(lost_lines)
+    for i in range(len(sorted_lines) - 1):
+        line_1 = sorted_lines[i]
+        line_2 = sorted_lines[i+1]
+        dist = line_2[0] - (line_1[0] + line_1[2])
+        threshold = gamma_threshold * estimate_threshold_between_lines((line_1, line_2), height, width) * width
+        if dist < threshold:
+            matched_lines.append([line_1, line_2])
+        else:
+            very_lost_lines.append(line_1)
+            if (i == len(sorted_lines) - 2):
+                very_lost_lines.append(line_2)
+    return matched_lines, very_lost_lines
+
+def get_raw_mask(bgr_img):
+    threshold = 1 - math.ceil(THRESHOLD_RELEVANT * bgr_img.shape[0])
+    sub_image = bgr_img[threshold: , :, :]
+    hsv_img = cv2.cvtColor(sub_image, cv2.COLOR_BGR2HSV)
+    mask_1 = cv2.inRange(hsv_img, REF_COLOR_LOW_1, REF_COLOR_HIGH_1)
+    mask_2 = cv2.inRange(hsv_img, REF_COLOR_LOW_2, REF_COLOR_HIGH_2)
+    mask = mask_1 | mask_2
+    return mask
+
+def get_kernel_size(height):
+    return int(height / 720 * KERNEL_SIZE_720)
+
+
+def get_processed_mask(bgr_img):
+    mask = get_raw_mask(bgr_img)
+    filled_mask = mask.copy()
+    cv2.floodFill(filled_mask, np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), np.uint8), seedPoint=(0,0), newVal=255)
+    filled_mask = cv2.bitwise_not(filled_mask)
+    return mask | filled_mask
+
+def generate_rectangle(element, height, width):
+    """
+    Generate the rectangle (x,y,w,h) of an element (recursive function)
+    Parameters
+    ----------
+    element: list or tuple
+        element
+    height: int
+        height of the image
+    width: int
+        width of the image
+    Returns
+    -------
+        The corresponding rectangle (x,y,w,h)
+    """
+    if isinstance(element, tuple):
+        return element
+    rectangles = []
+    for elem in element:
+        rectangles.append(generate_rectangle(elem, width, height))
+    x = width
+    y = height
+    for rectangle in rectangles:
+        if rectangle[0] < x:
+            x = rectangle[0]
+        if rectangle[1] < y:
+            y = rectangle[1]
+    w = 0
+    h = 0
+    for rectangle in rectangles:
+        if rectangle[0] + rectangle[2] - x > w:
+            w = rectangle[0] + rectangle[2] - x
+        if rectangle[1] + rectangle[3] - y > h:
+            h = rectangle[1] + rectangle[3] - y
+    return (x, y, w, h)
+
+def estimate_depth_eye(area, height, width):
+    if CAMERA == "back_camera":
+        dico = DEPTH_ESTIMATION_AREA_EYES_FISHEYE
+    else:
+        dico = DEPTH_ESTIMATION_AREA_EYES
+    high_bound = -1
+    low_bound = -1
+    relative_area = area/(height * width)
+    for candidate in dico:
+        if relative_area <= candidate:
+            high_bound = candidate
+            break
+        low_bound = candidate
+    if high_bound == -1: #should not happen
+        return 1 #higher than max value
+    # Linear interpolation
+    size = dico[low_bound] - dico[high_bound]
+    proportion = (relative_area - low_bound) / (high_bound - low_bound)
+    return dico[high_bound] + proportion * size
+
+def estimate_depth_line(area, height, width):
+    if CAMERA == "back_camera":
+        dico = DEPTH_ESTIMATION_AREA_LINES_FISHEYE
+    else:
+        dico = DEPTH_ESTIMATION_AREA_LINES
+    high_bound = -1
+    low_bound = -1
+    relative_area = area/(height * width)
+    for candidate in dico:
+        if relative_area <= candidate:
+            high_bound = candidate
+            break
+        low_bound = candidate
+    if high_bound == -1: #should not happen
+        return 1 #higher than max value
+    # Linear interpolation
+    size = dico[low_bound] - dico[high_bound]
+    proportion = (relative_area - low_bound) / (high_bound - low_bound)
+    return dico[high_bound] + proportion * size
+
+def estimate_depth_robot(cluster, height, width):
+    total_area = 0
+    depth_estimation = 0
+    if isinstance(cluster, tuple):
+        element = cluster
+        if element[5] == "eye":
+            return estimate_depth_eye(element[4], height, width)
+        else:
+            return estimate_depth_line(element[4], height, width)
+    for element in cluster:
+        if element[5] == "eye":
+            depth_element = estimate_depth_eye(element[4], height, width)
+        else:
+            depth_element = estimate_depth_line(element[4], height, width)
+        depth_estimation += element[4] * depth_element
+        total_area += element[4]
+    return depth_estimation / total_area
+
+def generate_robots_position_from_clusters(type_of_clusters, height, width):
+    robots = []
+    for clusters in type_of_clusters:
+        if len(clusters) == 0:
+            continue
+        for cluster in clusters:
+            rectangle = generate_rectangle(cluster, height, width)
+            point = Point()
+            point.x = (rectangle[0] + rectangle[2]/2)/width
+            point.y = (rectangle[1] + rectangle[3]/2)/height
+            point.z = estimate_depth_robot(cluster, height, width)
+            robots.append(point)
+    return robots
+
+def get_positions(bgr_img):
+    height, width, _ = bgr_img.shape
+    mask = get_processed_mask(bgr_img)
+    left_eyes, right_eyes, lines = find_robots_elements(mask, height)
+    eyes, isolated_left_eyes, isolated_right_eyes = find_matching_eyes(left_eyes, right_eyes, height, width)
+    cluster_eyes, isolated_eyes, isolated_lines = find_eyes_with_lines(eyes, lines, height, width)
+    cluster_lines, isolated_lines = find_lines_with_lines(isolated_lines, height, width)
+    robots_positions = generate_robots_position_from_clusters([
+        isolated_eyes, isolated_left_eyes, isolated_right_eyes,
+        cluster_eyes, cluster_lines, isolated_lines
+    ], height, width)
+    return robots_positions
+
+
+def callback(data):
+    np_arr = np.frombuffer(data.data, np.uint8)
+    cv2_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+    positions = get_positions(cv2_img)
+    msg = PointArray()
+    header = Header()
+    header.stamp = rospy.Time.now()
+    msg.header = header
+    msg.points = positions
+    pub.publish(msg)
+    
+def listener():
+    rospy.init_node(NODE_NAME, anonymous=True)
+    rospy.Subscriber(INPUT, CompressedImage, callback, queue_size=1, buff_size=2**24)
+    # spin() simply keeps python from exiting until this node is stopped
+    rospy.spin()
+
+if __name__ == '__main__':
+    args = rospy.myargv(argv=sys.argv)
+    if len(args) != 8:
+        print("Error, wrong number of args")
+        sys.exit(1)
+    INPUT = args[1]
+    OUTPUT = args[2]
+    HUE_REFERENCE = int(args[3])
+    TOLERANCE_H = int(args[4])
+    LOW_SAT = int(args[5])
+    LOW_VALUE = int(args[6])
+    CAMERA = args[7]
+
+    
+    pub = rospy.Publisher(OUTPUT, PointArray, queue_size=1)
+
+    REF_COLOR_LOW_1 = np.array([HUE_REFERENCE, LOW_SAT, LOW_VALUE])
+    REF_COLOR_HIGH_1 = np.array([REF_COLOR_LOW_1[0] + TOLERANCE_H, 255, 255])
+
+    REF_COLOR_HIGH_2 = np.array([HUE_REFERENCE, 255, 255])
+    REF_COLOR_LOW_2 = np.array([REF_COLOR_HIGH_2[0] - TOLERANCE_H, LOW_SAT, LOW_VALUE])
+
+    NODE_NAME = "color_detector"
+    try:
+        listener()
+    except rospy.ROSInterruptException:
+        pass

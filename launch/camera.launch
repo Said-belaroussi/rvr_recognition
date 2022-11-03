@@ -1,0 +1,23 @@
+<launch>
+  <arg name="width"/>
+  <arg name="height"/>
+  <arg name="framerate"/>
+  <arg name="pixel_format"/>
+  <arg name="camera"/>
+  <arg name="input"/>
+  <arg name="type"/>
+  <node name="$(arg camera)" pkg="usb_cam" type="usb_cam_node">
+    <param name="video_device" value="$(arg input)" />
+    <param name="image_width" value="$(arg width)" />
+    <param name="image_height" value="$(arg height)" />
+    <param name="framerate" value="$(arg framerate)" />  
+    <param name="pixel_format" value="$(arg pixel_format)" />
+    <param name="camera_frame_id" value="$(arg camera)" />
+    <param name="camera_name" value="$(arg camera)" />
+    <param name="camera_info_url" value="package://rvr_recognition/camera/intrinsics/$(arg type)/$(arg width)_$(arg height).yaml" />
+    <param name="io_method" value="mmap"/>
+  </node>
+  <group ns="$(arg camera)">
+    <node name="$(arg camera)_image_proc" pkg="image_proc" type="image_proc"/>
+  </group>
+</launch>

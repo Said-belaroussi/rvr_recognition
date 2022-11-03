@@ -1,0 +1,15 @@
+<launch>
+  <include file="$(find rvr_recognition)/launch/aruco_detector.launch">
+    <arg name="camera" value="front_camera"/>
+  </include>
+  <include file="$(find rvr_recognition)/launch/aruco_detector.launch">
+    <arg name="camera" value="left_camera"/>
+  </include>
+  <include file="$(find rvr_recognition)/launch/aruco_detector.launch">
+    <arg name="camera" value="right_camera"/>
+  </include>
+  <include file="$(find rvr_recognition)/launch/aruco_detector.launch">
+    <arg name="camera" value="back_camera"/>
+  </include>
+  <node name="rvr_localisator" pkg="rvr_recognition" type="rvr_localisator"/>
+</launch>

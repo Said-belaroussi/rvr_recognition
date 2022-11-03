@@ -1,0 +1,8 @@
+<launch>
+  <arg name="camera"/>
+  <arg name="in" default="$(arg camera)/image_rect_color/compressed"/>
+  <arg name="temp" default="$(arg camera)/nn_detector/relative_position"/>
+  <arg name="out" default="$(arg camera)/rvr_position"/>
+  <node name="$(arg camera)_nn_detector" pkg="rvr_recognition" type="nn_detector" args="$(arg in) $(arg temp) $(arg camera)"/>
+  <node name="$(arg camera)_nn_translator" pkg="rvr_recognition" type="nn_translator" args="$(arg temp) $(arg out) $(arg camera)"/>
+</launch>

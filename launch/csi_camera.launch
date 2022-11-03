@@ -1,0 +1,16 @@
+<launch>
+  <arg name="width"/>
+  <arg name="height"/>
+  <arg name="framerate"/>
+  <arg name="camera"/>
+  <arg name="input"/>
+  <include file="$(find rvr_recognition)/launch/camera.launch">
+    <arg name="width" value="$(arg width)"/>
+    <arg name="height" value="$(arg height)"/>
+    <arg name="framerate" value="$(arg framerate)"/>
+    <arg name="pixel_format" value="yuyv"/>
+    <arg name="camera" value="$(arg camera)"/>
+    <arg name="input" value="$(arg input)"/>
+    <arg name="type" value="csi"/>
+  </include>
+</launch>

@@ -1,0 +1,6 @@
+<launch>
+  <node name="rvr_localisator_viewer" pkg="rvr_recognition" type="rvr_localisator_viewer"/>
+  <node name="image_view" pkg="image_view" type="image_view">
+    <remap from="image" to="/rvr_localisation_image" />
+  </node>
+</launch>

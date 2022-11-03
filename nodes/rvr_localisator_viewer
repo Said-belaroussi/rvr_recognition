@@ -1,0 +1,54 @@
+#!/usr/bin/env python
+
+import math
+
+import rospy
+import cv2
+from sensor_msgs.msg import Image
+from rvr_recognition.msg import PointArray
+import rospkg
+from cv_bridge import CvBridge, CvBridgeError
+
+bridge = CvBridge()
+
+def get_background_image():
+    rospack = rospkg.RosPack()
+    package_path = rospack.get_path("rvr_recognition")
+    image = cv2.imread(package_path+"/resources/image/rvr-space.png")
+    return image
+
+BACKGROUND_IMAGE = get_background_image()
+CENTER = (BACKGROUND_IMAGE.shape[0]//2, BACKGROUND_IMAGE.shape[1]//2)
+COLOR = (0, 0, 255)
+SIZE_ARENA = 300
+
+def callback(data):
+    positions = data.points
+    image = BACKGROUND_IMAGE.copy()
+    for position in positions:
+        scaled_x = position.x / SIZE_ARENA * BACKGROUND_IMAGE.shape[1]
+        scaled_y = position.y / SIZE_ARENA * BACKGROUND_IMAGE.shape[0]
+        x = math.ceil(scaled_x + CENTER[1])
+        y = BACKGROUND_IMAGE.shape[0] - (math.ceil(scaled_y + CENTER[0]))
+        image = cv2.line(image, (CENTER[1], CENTER[0]), (x, y), COLOR, 2)
+    try:
+        msg = bridge.cv2_to_imgmsg(image, "bgr8")
+        rospy.loginfo("Published image with " + str(len(positions)) + " robots")
+        pub.publish(msg)
+    except CvBridgeError as e:
+        print(e)
+        rospy.loginfo("Error while converting image")
+
+def listener():
+    rospy.init_node("rvr_localisation_viewer", anonymous=True)
+
+    rospy.Subscriber("rvr_localisation", PointArray, callback)
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    pub = rospy.Publisher("rvr_localisation_image", Image, queue_size=1)
+    try:
+        listener()
+    except rospy.ROSInterruptException:
+        pass

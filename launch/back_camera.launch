@@ -1,6 +1,6 @@
 <launch>
-  <arg name="width" default="1280"/>
-  <arg name="height" default="720"/>
+  <arg name="width" default="1920"/>
+  <arg name="height" default="1080"/>
   <arg name="framerate" default="30"/>
   <arg name="camera" default="back_camera"/>
   <arg name="input" default="/dev/video14"/>

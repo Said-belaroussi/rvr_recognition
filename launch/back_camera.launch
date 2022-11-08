@@ -3,7 +3,7 @@
   <arg name="height" default="720"/>
   <arg name="framerate" default="30"/>
   <arg name="camera" default="back_camera"/>
-  <arg name="input" default="/dev/video14"/>
+  <arg name="input" default="/dev/video6"/>
   <include file="$(find rvr_recognition)/launch/csi_camera.launch">
     <arg name="width" value="$(arg width)"/>
     <arg name="height" value="$(arg height)"/>

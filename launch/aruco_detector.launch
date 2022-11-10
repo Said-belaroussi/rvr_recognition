@@ -5,7 +5,7 @@
     <param name="fiducial_len" value="0.04" />
     <param name="image_transport" value="compressed" />
     <param name="publish_images" value="false" />
-    <remap from="/camera/compressed" to="$(arg camera)/image_rect_color/compressed"/>
+    <remap from="/camera/compressed" to="$(arg camera)/image_rect/compressed"/>
     <remap from="/camera_info" to="$(arg camera)/camera_info"/>
     <remap from="/fiducial_vertices" to="$(arg camera)/fiducial_vertices"/>
     <remap from="/fiducial_transforms" to="$(arg camera)/fiducial_transforms"/>

@@ -1,7 +1,7 @@
 <launch>
   <arg name="width" default="1280"/>
   <arg name="height" default="720"/>
-  <arg name="framerate" default="2"/>
+  <arg name="framerate" default="5"/>
   <arg name="camera" default="front_camera"/>
   <arg name="input" default="/dev/video0"/>
   <include file="$(find rvr_recognition)/launch/usb_camera.launch">

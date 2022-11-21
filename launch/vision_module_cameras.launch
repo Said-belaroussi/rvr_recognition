@@ -1,6 +1,6 @@
 <launch>
-  <arg name="width" default="1280"/>
-  <arg name="height" default="720"/>
+  <arg name="width" default="640"/>
+  <arg name="height" default="360"/>
   <arg name="framerate" default="30"/>
   <include file="$(find rvr_recognition)/launch/front_camera.launch">
     <arg name="width" value="$(arg width)"/>

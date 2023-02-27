@@ -5,6 +5,7 @@ This script detects markers using Aruco from the webcam and draw pose
 # Import required packages
 import numpy as np
 import cv2
+import sys
 
 cameraMatrix = np.array([[1.01301031e+03, 0.00000000e+00, 6.23731386e+02],
  [0.00000000e+00, 1.01096127e+03, 3.74389860e+02],
@@ -23,7 +24,7 @@ while True:
     # Capture frame by frame from the video capture object 'capture':
     ret, frame = capture.read()
 
-    # We convert the frame to grayscale:
+    # Convert the frame to grayscale:
     gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     # lists of ids and the corners beloning to each id# We call the function 'cv2.aruco.detectMarkers()'
@@ -32,14 +33,12 @@ while True:
     # Draw detected markers:
     frame = cv2.aruco.drawDetectedMarkers(image=frame, corners=corners, ids=ids, borderColor=(0, 255, 0))
 
-    #frame = cv2.aruco.drawDetectedMarkers(image=frame, corners=rejectedImgPoints, borderColor=(0, 0, 255))
     rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, 0.04, cameraMatrix, distCoeffs)
     print(rvecs, tvecs)
 
     # Display the resulting frame
-    cv2.imshow('frame', frame)
+    # cv2.imshow('frame', frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 # Release everything:
 capture.release()
-cv2.destroyAllWindows()

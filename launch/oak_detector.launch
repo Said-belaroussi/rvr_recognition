@@ -1,0 +1,3 @@
+<launch>
+  <node name="oak_detector" pkg="rvr_recognition" type="oak_detector"/>
+</launch>

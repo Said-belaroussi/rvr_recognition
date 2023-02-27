@@ -9,7 +9,7 @@ from std_msgs.msg import Header
 from sensor_msgs.msg import CompressedImage
 from geometry_msgs.msg import Point
 from rvr_recognition.msg import PointArray
-from vision_msgs import Detection2DArray
+from vision_msgs.msg import Detection2DArray
 import rospkg
 import cv2
 
@@ -66,7 +66,7 @@ if __name__ == '__main__':
         # max_depth = np.amax(depth)
         # cv2.imshow("depth", depth/max_depth)
         # displaying the video feed as successive frames
-        cv2.imshow("frame", frame)
+        #cv2.imshow("frame", frame)
 
         # how to close the OAK inference window / stop inference: CTRL+q or CTRL+c
         if cv2.waitKey(1) == ord('q'):

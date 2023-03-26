@@ -10,25 +10,31 @@ from sensor_msgs.msg import CompressedImage
 from geometry_msgs.msg import Point
 from rvr_recognition.msg import PointArray
 from vision_msgs.msg import Detection2DArray
+from vision_msgs.msg import Detection2D
 import rospkg
 import cv2
 
 def callback(data):
-    np_arr = np.frombuffer(data.data, np.uint8)
-    cv2_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-    positions = get_positions(cv2_img)
-    msg = PointArray()
+    msg = Detection2DArray
     header = Header()
     header.stamp = rospy.Time.now()
     msg.header = header
-    msg.points = positions
+    detection_2d_list = []
+    for i in data:
+        detection_2d_msg = Detection2D
+        detection_2d_msg.header = header
+        detection_2d_msg.BoundingBox2D.Pose2D.x = i["x"]
+        detection_2d_msg.BoundingBox2D.Pose2D.x = i["y"]
+        detection_2d_msg.BoundingBox2D.size_x = i["width"]
+        detection_2d_msg.BoundingBox2D.size_y = i["height"]
+        detection_2d_list.append(detection_2d_msg)
     pub.publish(msg)
 
 
 
 if __name__ == '__main__':
     rospy.init_node("oak_detector", anonymous=True)
-
+    pub = rospy.Publisher("oak", Detection2DArray, queue_size=1)
 
     # instantiating an object (rf) with the RoboflowOak module
     rf = RoboflowOak(model="rvr_detection_v2", confidence=0.05, overlap=0.5,
@@ -40,6 +46,7 @@ if __name__ == '__main__':
         # The rf.detect() function runs the model inference
         result, frame, raw_frame, depth = rf.detect()
         predictions = result["predictions"]
+
         #{
         #    predictions:
         #    [ {
@@ -61,7 +68,7 @@ if __name__ == '__main__':
         t = time.time()-t0
         print("INFERENCE TIME IN MS ", 1/t)
         print("PREDICTIONS ", [p.json() for p in predictions])
-
+        callback(predictions)
         # setting parameters for depth calculation
         # max_depth = np.amax(depth)
         # cv2.imshow("depth", depth/max_depth)

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from roboflowoak import RoboflowOak
 import cv2
 import time
@@ -6,28 +8,36 @@ import numpy as np
 import sys
 import rospy
 from std_msgs.msg import Header
-from sensor_msgs.msg import CompressedImage
-from geometry_msgs.msg import Point
-from rvr_recognition.msg import PointArray
 from vision_msgs.msg import Detection2DArray
 from vision_msgs.msg import Detection2D
+from vision_msgs.msg import BoundingBox2D
+from geometry_msgs.msg import Pose2D
 import rospkg
 import cv2
 
 def callback(data):
-    msg = Detection2DArray
+    msg = Detection2DArray()
     header = Header()
     header.stamp = rospy.Time.now()
     msg.header = header
     detection_2d_list = []
+    print(data, "lol")
     for i in data:
-        detection_2d_msg = Detection2D
+        detection_2d_msg = Detection2D()
         detection_2d_msg.header = header
-        detection_2d_msg.BoundingBox2D.Pose2D.x = i["x"]
-        detection_2d_msg.BoundingBox2D.Pose2D.x = i["y"]
-        detection_2d_msg.BoundingBox2D.size_x = i["width"]
-        detection_2d_msg.BoundingBox2D.size_y = i["height"]
+        print(detection_2d_msg)
+        bounding_box_2d = BoundingBox2D()
+        pose_2d = Pose2D()
+        pose_2d.x = i['x']
+        pose_2d.y = i["y"]
+        # print(pose_2d)
+        bounding_box_2d.size_x = i["width"]
+        bounding_box_2d.size_y = i["height"]
+        detection_2d_msg.bbox = bounding_box_2d
         detection_2d_list.append(detection_2d_msg)
+
+    msg.detections = detection_2d_list
+    print(detection_2d_list)
     pub.publish(msg)
 
 
@@ -67,13 +77,13 @@ if __name__ == '__main__':
         # timing: for benchmarking purposes
         t = time.time()-t0
         print("INFERENCE TIME IN MS ", 1/t)
-        print("PREDICTIONS ", [p.json() for p in predictions])
-        callback(predictions)
+        #print("PREDICTIONS ", [p.json() for p in predictions])
+        callback([p.json() for p in predictions])
         # setting parameters for depth calculation
         # max_depth = np.amax(depth)
         # cv2.imshow("depth", depth/max_depth)
         # displaying the video feed as successive frames
-        #cv2.imshow("frame", frame)
+        cv2.imshow("frame", frame)
 
         # how to close the OAK inference window / stop inference: CTRL+q or CTRL+c
         if cv2.waitKey(1) == ord('q'):
